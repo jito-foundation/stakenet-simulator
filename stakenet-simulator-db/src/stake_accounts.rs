@@ -1,4 +1,7 @@
-use solana_sdk::{pubkey::Pubkey, stake::state::StakeStateV2};
+use solana_sdk::{
+    pubkey::Pubkey,
+    stake::state::StakeStateV2,
+};
 use sqlx::{Error as SqlxError, FromRow, Pool, Postgres, QueryBuilder, types::BigDecimal};
 
 use crate::stake_accounts;
@@ -52,7 +55,9 @@ impl From<(Pubkey, StakeStateV2)> for StakeAccount {
                 res.delegation_stake = Some(stake.delegation.stake);
                 res.delegation_activation_epoch = Some(stake.delegation.activation_epoch);
                 res.delegation_deactivation_epoch = Some(stake.delegation.deactivation_epoch);
-                res.delegation_warmup_cooldown_rate = Some(stake.delegation.warmup_cooldown_rate);
+                // warmup_cooldown_rate field was deprecated - it's now a network-wide constant
+                // rather than per-delegation. Set to None since we don't have epoch context.
+                res.delegation_warmup_cooldown_rate = None;
                 res.credits_observed = Some(stake.credits_observed);
             }
             StakeStateV2::RewardsPool => {

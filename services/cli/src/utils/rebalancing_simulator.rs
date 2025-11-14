@@ -1015,12 +1015,13 @@ impl RebalancingSimulator {
         .await?;
 
         for reward in rewards {
-            if let Some(stake_state) = self.validator_stake_states.get_mut(&reward.vote_pubkey)
-                && stake_state.active > 0 {
+            if let Some(stake_state) = self.validator_stake_states.get_mut(&reward.vote_pubkey) {
+                if stake_state.active > 0 {
                     let reward_amount =
                         reward.stake_after_epoch(stake_state.active) - stake_state.active;
                     stake_state.apply_rewards(reward_amount);
                 }
+            }
         }
 
         let total_after_rewards = self

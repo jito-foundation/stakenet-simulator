@@ -14,7 +14,7 @@ use solana_sdk::{
     commitment_config::CommitmentConfig,
     pubkey::Pubkey,
     slot_history,
-    stake::{self, state::StakeStateV2},
+    stake::{program::ID as STAKE_PROGRAM_ID, state::StakeStateV2},
 };
 use solana_transaction_status_client_types::{
     TransactionDetails, UiConfirmedBlock, UiTransactionEncoding,
@@ -80,7 +80,7 @@ pub async fn fetch_stake_accounts_for_validator(
         sort_results: Some(true),
     };
     let accounts = client
-        .get_program_accounts_with_config(&stake::program::ID, config)
+        .get_program_accounts_with_config(&STAKE_PROGRAM_ID, config)
         .await?;
 
     Ok(accounts
