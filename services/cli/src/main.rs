@@ -2,7 +2,9 @@ use crate::error::CliError;
 use clap::{Parser, Subcommand};
 use commands::backtest::*;
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::pubkey::Pubkey;
 use sqlx::postgres::PgPoolOptions;
+use std::str::FromStr;
 use std::sync::Arc;
 use tracing::Level;
 use tracing_subscriber::EnvFilter;
@@ -25,6 +27,13 @@ struct Cli {
         default_value = "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
     )]
     pub db_connection_url: String,
+
+    #[arg(
+        long,
+        env,
+        default_value = "jitoVjT9jRUyeXHzvCwzPgHj7yWNRhLcUoXtes4wtjv"
+    )]
+    pub steward_config: String,
 
     #[command(subcommand)]
     command: Commands,
@@ -76,17 +85,23 @@ async fn main() -> Result<(), CliError> {
             let rpc_url = cli.rpc_url.as_ref().ok_or(CliError::InvalidRPCUrl)?;
             let rpc_client = RpcClient::new(rpc_url.to_string());
 
+            // Parse steward config pubkey
+            let steward_config_pubkey = Pubkey::from_str(&cli.steward_config)
+                .map_err(|_| CliError::Custom("Invalid steward config pubkey".to_string()))?;
+
             // Query max epoch from epoch_rewards table
             // This is limited by the data available in data.csv which is used to populate epoch_rewards.
             // The epoch_rewards table contains historical inflation, MEV, and priority fee data required
             // for accurate backtest simulations.
-            let current_epoch: u16 =
-                sqlx::query_scalar::<_, i64>("SELECT MAX(epoch) FROM epoch_rewards")
-                    .fetch_one(db_conn_pool.as_ref())
-                    .await
-                    .map_err(|e| CliError::Custom(format!("Failed to query max epoch: {}", e)))?
-                    .try_into()
-                    .map_err(|e| CliError::Custom(format!("Invalid epoch value: {}", e)))?;
+            let current_epoch: u16 = sqlx::query_scalar::<_, sqlx::types::BigDecimal>(
+                "SELECT MAX(epoch) FROM epoch_rewards",
+            )
+            .fetch_one(db_conn_pool.as_ref())
+            .await
+            .map_err(|e| CliError::Custom(format!("Failed to query max epoch: {}", e)))?
+            .to_string()
+            .parse::<u16>()
+            .map_err(|e| CliError::Custom(format!("Invalid epoch value: {}", e)))?;
 
             tracing::info!("Using max epoch {} from epoch_rewards table", current_epoch);
 
@@ -99,6 +114,7 @@ async fn main() -> Result<(), CliError> {
                 &rpc_client,
                 current_epoch,
                 look_back_period,
+                &steward_config_pubkey,
             )
             .await?;
             Ok(())

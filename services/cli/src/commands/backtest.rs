@@ -135,12 +135,10 @@ pub async fn handle_backtest(
     rpc_client: &RpcClient,
     current_epoch: u16,
     look_back_period: u16,
+    steward_config_pubkey: &solana_sdk::pubkey::Pubkey,
 ) -> Result<f64, CliError> {
-    // TODO: Determine if this should be an argument
-    let number_of_validator_delegations = 200;
-
     // Load existing steward config and overwrite parameters based on CLI args
-    let mut steward_config = fetch_config(rpc_client).await?;
+    let mut steward_config = fetch_config(rpc_client, steward_config_pubkey).await?;
     args.update_steward_config(&mut steward_config);
 
     let simulation_start_epoch = current_epoch.saturating_sub(look_back_period);
@@ -151,7 +149,7 @@ pub async fn handle_backtest(
         simulation_start_epoch,
         current_epoch,
         args.steward_cycle_rate,
-        number_of_validator_delegations,
+        steward_config.parameters.num_delegation_validators as usize,
         steward_config.parameters.instant_unstake_cap_bps,
         steward_config.parameters.scoring_unstake_cap_bps,
         std::cmp::max(

@@ -569,6 +569,13 @@ impl RebalancingSimulator {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
+        if sorted_validators.is_empty() {
+            panic!(
+                "No validators available for rebalancing. This likely means no validators scored > 0.0. \
+                Check that epoch_rewards and validator_history_entries tables have data for the simulation period."
+            );
+        }
+
         let stake_per_validator: u64 = target_total / sorted_validators.len() as u64;
 
         self.validator_scores.clear();

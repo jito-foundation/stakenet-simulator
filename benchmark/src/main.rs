@@ -3,8 +3,9 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::pubkey::Pubkey;
 use sqlx::postgres::PgPoolOptions;
-use std::{env, error::Error, sync::Arc};
+use std::{env, error::Error, str::FromStr, sync::Arc};
 use steward_simulator_cli::commands::{BacktestArgs, handle_backtest};
 use tracing::info;
 
@@ -54,6 +55,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let rpc_client = RpcClient::new(rpc_url.clone());
     info!("RPC client initialized at {}", rpc_url);
+
+    let steward_config_str = env::var("STEWARD_CONFIG")
+        .unwrap_or_else(|_| "jitoVjT9jRUyeXHzvCwzPgHj7yWNRhLcUoXtes4wtjv".to_string());
+    let steward_config_pubkey = Pubkey::from_str(&steward_config_str)?;
+    info!("Using steward config: {}", steward_config_pubkey);
 
     let client = Client::new();
     let current_date = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
@@ -109,20 +115,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Query max epoch from epoch_rewards table
     // This is limited by the data available in data.csv which is used to populate epoch_rewards
-    let max_epoch: i64 = sqlx::query_scalar("SELECT MAX(epoch) FROM epoch_rewards")
-        .fetch_one(db_conn_pool.as_ref())
-        .await?;
+    let max_epoch: i64 = sqlx::query_scalar::<_, sqlx::types::BigDecimal>(
+        "SELECT MAX(epoch) FROM epoch_rewards",
+    )
+    .fetch_one(db_conn_pool.as_ref())
+    .await?
+    .to_string()
+    .parse::<i64>()?;
 
     info!("Max epoch in epoch_rewards table: {}", max_epoch);
 
     // Generate epoch ranges dynamically based on max available epoch
     // Testing various 50-100 epoch windows to compare Jito APY vs simulated APY
+    // Note: Epochs before 735 have delinquency_score = 0 causing all validators to score 0.
+    // Use epoch 740 as minimum to ensure accurate scoring (see CONSIDERATIONS.md)
+    const MIN_EPOCH: i64 = 740;
     let epoch_ranges = vec![
-        (max_epoch - 200, max_epoch - 100),
-        (max_epoch - 150, max_epoch - 100),
         (max_epoch - 100, max_epoch),
         (max_epoch - 50, max_epoch),
-    ];
+    ]
+    .into_iter()
+    .filter(|(start, _)| *start >= MIN_EPOCH)
+    .collect::<Vec<_>>();
 
     for (start_epoch, end_epoch) in epoch_ranges {
         let apy_with_epochs: Vec<ApyWithEpoch> = jito_json
@@ -163,6 +177,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             &rpc_client,
             end_epoch as u16,
             (end_epoch - start_epoch) as u16,
+            &steward_config_pubkey,
         )
         .await?;
         println!(

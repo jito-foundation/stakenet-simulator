@@ -658,6 +658,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solana-client",
+ "solana-sdk",
  "sqlx",
  "steward-simulator-cli",
  "tokio",
