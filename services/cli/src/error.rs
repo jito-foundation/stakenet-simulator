@@ -36,4 +36,7 @@ pub enum CliError {
 
     #[error("Error joining tokio task: {0}")]
     TaskJoinError(#[from] JoinError),
+
+    #[error("{0}")]
+    Custom(String),
 }

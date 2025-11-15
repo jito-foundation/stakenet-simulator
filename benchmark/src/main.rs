@@ -107,14 +107,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let est_now = estimate_epoch_from_time(&Utc::now().to_rfc3339())?;
     let offset = rpc_epoch - est_now;
 
+    // Query max epoch from epoch_rewards table
+    // This is limited by the data available in data.csv which is used to populate epoch_rewards
+    let max_epoch: i64 = sqlx::query_scalar("SELECT MAX(epoch) FROM epoch_rewards")
+        .fetch_one(db_conn_pool.as_ref())
+        .await?;
+
+    info!("Max epoch in epoch_rewards table: {}", max_epoch);
+
+    // Generate epoch ranges dynamically based on max available epoch
+    // Testing various 50-100 epoch windows to compare Jito APY vs simulated APY
     let epoch_ranges = vec![
-        (600, 700),
-        (550, 600),
-        (735, 800),
-        (732, 800),
-        (750, 850),
-        (800, 850),
-        (740, 850),
+        (max_epoch - 200, max_epoch - 100),
+        (max_epoch - 150, max_epoch - 100),
+        (max_epoch - 100, max_epoch),
+        (max_epoch - 50, max_epoch),
     ];
 
     for (start_epoch, end_epoch) in epoch_ranges {
@@ -133,7 +140,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         let filtered_apy: Vec<ApyWithEpoch> = apy_with_epochs
             .into_iter()
-            .filter(|r| r.epoch >= start_epoch.into() && r.epoch <= end_epoch.into())
+            .filter(|r| r.epoch >= start_epoch as u64 && r.epoch <= end_epoch as u64)
             .collect();
 
         let avg_apy = if !filtered_apy.is_empty() {
@@ -154,8 +161,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             args,
             &db_conn_pool,
             &rpc_client,
-            end_epoch,
-            end_epoch - start_epoch,
+            end_epoch as u16,
+            (end_epoch - start_epoch) as u16,
         )
         .await?;
         println!(
