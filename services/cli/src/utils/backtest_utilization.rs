@@ -18,23 +18,70 @@ pub fn calculate_aggregated_apy(
         return Ok(0.0);
     }
 
-    // Get the initial and final total stake amounts
+    // Get the initial total stake amount
     let initial_total_stake = rebalancing_cycles[0].starting_total_lamports;
-    let final_total_stake = rebalancing_cycles
-        .last()
-        .ok_or(CliError::ArithmeticError)?
-        .ending_total_lamports;
 
     if initial_total_stake == 0 {
         return Ok(0.0);
     }
 
-    let overall_return_rate = (final_total_stake - initial_total_stake)
+    // Calculate total rewards earned across all cycles (excluding deposits/withdrawals)
+    let total_rewards_earned: u64 = rebalancing_cycles
+        .iter()
+        .map(|cycle| cycle.total_rewards_earned)
+        .sum();
+
+    // Calculate total net deposits/withdrawals for verification
+    let total_deposits: i64 = rebalancing_cycles
+        .iter()
+        .map(|cycle| cycle.total_deposit_withdrawals)
+        .sum();
+
+    // Get final total stake for comparison
+    let final_total_stake = rebalancing_cycles
+        .last()
+        .ok_or(CliError::ArithmeticError)?
+        .ending_total_lamports;
+
+    // Log validation information
+    tracing::info!(
+        "APY calculation breakdown - Initial stake: {:.6} SOL, Final stake: {:.6} SOL",
+        initial_total_stake as f64 / 1_000_000_000.0,
+        final_total_stake as f64 / 1_000_000_000.0
+    );
+    tracing::info!(
+        "Total rewards earned: {:.6} SOL, Net deposits/withdrawals: {:.6} SOL",
+        total_rewards_earned as f64 / 1_000_000_000.0,
+        total_deposits as f64 / 1_000_000_000.0
+    );
+
+    // Verify that rewards + deposits = total change
+    let expected_change = (total_rewards_earned as i64) + total_deposits;
+    let actual_change = final_total_stake as i64 - initial_total_stake as i64;
+    if expected_change != actual_change {
+        tracing::warn!(
+            "Validation mismatch! Expected change: {:.6} SOL, Actual change: {:.6} SOL",
+            expected_change as f64 / 1_000_000_000.0,
+            actual_change as f64 / 1_000_000_000.0
+        );
+    }
+
+    // Calculate return rate using only rewards (not deposits/withdrawals)
+    let overall_return_rate = total_rewards_earned
         .to_f64()
         .ok_or(CliError::ArithmeticError)?
         / initial_total_stake
             .to_f64()
             .ok_or(CliError::ArithmeticError)?;
+
+    // Log the old (incorrect) calculation for comparison
+    let old_incorrect_return_rate =
+        (final_total_stake as f64 - initial_total_stake as f64) / initial_total_stake as f64;
+    tracing::info!(
+        "Return rate - Old (incorrect with deposits): {:.4}%, New (correct rewards only): {:.4}%",
+        old_incorrect_return_rate * 100.0,
+        overall_return_rate * 100.0
+    );
 
     // Convert to APY
     let lookback_period_in_days = total_lookback_period

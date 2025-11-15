@@ -115,13 +115,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Query max epoch from epoch_rewards table
     // This is limited by the data available in data.csv which is used to populate epoch_rewards
-    let max_epoch: i64 = sqlx::query_scalar::<_, sqlx::types::BigDecimal>(
-        "SELECT MAX(epoch) FROM epoch_rewards",
-    )
-    .fetch_one(db_conn_pool.as_ref())
-    .await?
-    .to_string()
-    .parse::<i64>()?;
+    let max_epoch: i64 =
+        sqlx::query_scalar::<_, sqlx::types::BigDecimal>("SELECT MAX(epoch) FROM epoch_rewards")
+            .fetch_one(db_conn_pool.as_ref())
+            .await?
+            .to_string()
+            .parse::<i64>()?;
 
     info!("Max epoch in epoch_rewards table: {}", max_epoch);
 
@@ -130,13 +129,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Note: Epochs before 735 have delinquency_score = 0 causing all validators to score 0.
     // Use epoch 740 as minimum to ensure accurate scoring (see CONSIDERATIONS.md)
     const MIN_EPOCH: i64 = 740;
-    let epoch_ranges = vec![
-        (max_epoch - 100, max_epoch),
-        (max_epoch - 50, max_epoch),
-    ]
-    .into_iter()
-    .filter(|(start, _)| *start >= MIN_EPOCH)
-    .collect::<Vec<_>>();
+    let epoch_ranges = vec![(max_epoch - 100, max_epoch), (max_epoch - 50, max_epoch)]
+        .into_iter()
+        .filter(|(start, _)| *start >= MIN_EPOCH)
+        .collect::<Vec<_>>();
 
     for (start_epoch, end_epoch) in epoch_ranges {
         let apy_with_epochs: Vec<ApyWithEpoch> = jito_json

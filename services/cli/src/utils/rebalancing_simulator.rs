@@ -26,6 +26,10 @@ use validator_history::ClusterHistory as JitoClusterHistory;
 pub struct RebalancingCycle {
     pub starting_total_lamports: u64,
     pub ending_total_lamports: u64,
+    /// Total rewards earned from staking during this cycle (inflation + MEV + priority fees)
+    pub total_rewards_earned: u64,
+    /// Net deposits/withdrawals during this cycle (can be negative for net withdrawals)
+    pub total_deposit_withdrawals: i64,
 }
 
 pub struct EpochWithdrawDepositStakeData {
@@ -68,6 +72,10 @@ pub struct RebalancingSimulator {
     pub entries_by_validator: Arc<HashMap<String, Vec<ValidatorHistoryEntry>>>,
     pub stake_epoch_map: HashMap<u64, Vec<EpochWithdrawDepositStakeData>>,
     pub sol_epoch_map: HashMap<u64, EpochWithdrawDepositSOLData>,
+
+    // Accumulators for tracking rewards and deposits/withdrawals within current cycle
+    pub current_cycle_rewards: u64,
+    pub current_cycle_deposits: i64,
 }
 
 impl RebalancingSimulator {
@@ -170,6 +178,8 @@ impl RebalancingSimulator {
             entries_by_validator: Arc::new(entries_by_validator),
             stake_epoch_map: manual_withdraw_deposit_stake_epoch_map,
             sol_epoch_map: manual_withdraw_deposit_sol_epoch_map,
+            current_cycle_rewards: 0,
+            current_cycle_deposits: 0,
         })
     }
 
@@ -333,6 +343,8 @@ impl RebalancingSimulator {
         let cycle_result = RebalancingCycle {
             starting_total_lamports: cycle_starting_lamports,
             ending_total_lamports: cycle_ending_lamports,
+            total_rewards_earned: self.current_cycle_rewards,
+            total_deposit_withdrawals: self.current_cycle_deposits,
         };
 
         info!(
@@ -342,8 +354,18 @@ impl RebalancingSimulator {
             ((cycle_ending_lamports as f64 / cycle_starting_lamports as f64) - 1.0) * 100.0
         );
 
+        info!(
+            "Cycle breakdown - Rewards: {:.6} SOL, Net Deposits: {:.6} SOL",
+            self.current_cycle_rewards as f64 / LAMPORTS_PER_SOL as f64,
+            self.current_cycle_deposits as f64 / LAMPORTS_PER_SOL as f64
+        );
+
         self.rebalancing_cycles.push(cycle_result);
         self.total_lamports_staked = cycle_ending_lamports;
+
+        // Reset accumulators for the next cycle
+        self.current_cycle_rewards = 0;
+        self.current_cycle_deposits = 0;
     }
 
     /// spawns new `tokio::task` for all the validators, calculates their score
@@ -671,6 +693,13 @@ impl RebalancingSimulator {
     fn apply_epoch_stake_changes(&mut self, current_epoch: u16) -> Result<(), CliError> {
         let current_epoch_u64 = current_epoch as u64;
 
+        // Track total stake before applying changes for deposit/withdrawal tracking
+        let total_before_changes = self
+            .validator_stake_states
+            .values()
+            .map(|state| state.total())
+            .sum::<u64>();
+
         if let Some(epoch_data_vec) = self.stake_epoch_map.get(&current_epoch_u64) {
             let num_records = epoch_data_vec.len();
             if num_records == 0 {
@@ -747,6 +776,10 @@ impl RebalancingSimulator {
             .map(|state| state.total())
             .sum::<u64>();
 
+        // Track net deposits/withdrawals for accurate APY calculation
+        let net_change = self.total_lamports_staked as i64 - total_before_changes as i64;
+        self.current_cycle_deposits = self.current_cycle_deposits.saturating_add(net_change);
+
         Ok(())
     }
 
@@ -755,6 +788,14 @@ impl RebalancingSimulator {
     /// to get a ratio, then applies that ratio divided equally among all top validators
     fn apply_epoch_sol_changes(&mut self, current_epoch: u16) -> Result<(), CliError> {
         let current_epoch_u64 = current_epoch as u64;
+
+        // Track total stake before applying SOL changes for deposit/withdrawal tracking
+        let total_before_changes = self
+            .validator_stake_states
+            .values()
+            .map(|state| state.total())
+            .sum::<u64>();
+
         if let Some(epoch_sol_data) = self.sol_epoch_map.get(&current_epoch_u64) {
             if epoch_sol_data.active_stake == 0.0 {
                 return Ok(());
@@ -801,6 +842,10 @@ impl RebalancingSimulator {
                 .values()
                 .map(|state| state.total())
                 .sum::<u64>();
+
+            // Track net SOL deposits/withdrawals for accurate APY calculation
+            let net_change = self.total_lamports_staked as i64 - total_before_changes as i64;
+            self.current_cycle_deposits = self.current_cycle_deposits.saturating_add(net_change);
         }
         Ok(())
     }
@@ -1038,6 +1083,10 @@ impl RebalancingSimulator {
             .sum::<u64>();
 
         self.total_lamports_staked = total_after_rewards;
+
+        // Track rewards earned in this epoch for accurate APY calculation
+        let epoch_rewards = total_after_rewards.saturating_sub(total_before_rewards);
+        self.current_cycle_rewards = self.current_cycle_rewards.saturating_add(epoch_rewards);
 
         let active_stake_total = self
             .validator_stake_states
