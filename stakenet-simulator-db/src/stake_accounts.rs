@@ -1,7 +1,4 @@
-use solana_sdk::{
-    pubkey::Pubkey,
-    stake::state::StakeStateV2,
-};
+use solana_sdk::{pubkey::Pubkey, stake::state::StakeStateV2};
 use sqlx::{Error as SqlxError, FromRow, Pool, Postgres, QueryBuilder, types::BigDecimal};
 
 use crate::stake_accounts;

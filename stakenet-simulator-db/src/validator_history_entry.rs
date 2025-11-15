@@ -148,10 +148,8 @@ impl ValidatorHistoryEntry {
                 record.validator_history_entry.activated_stake_lamports,
             ));
             separated.push_bind(i32::from(record.validator_history_entry.epoch));
-            separated
-                .push_bind(i32::from(record.validator_history_entry.mev_commission));
-            separated
-                .push_bind(i64::from(record.validator_history_entry.epoch_credits));
+            separated.push_bind(i32::from(record.validator_history_entry.mev_commission));
+            separated.push_bind(i64::from(record.validator_history_entry.epoch_credits));
             separated.push_bind(i32::from(record.validator_history_entry.commission));
             separated.push_bind(i16::from(record.validator_history_entry.client_type));
             let version: ClientVersion = record.validator_history_entry.version.into();
@@ -194,11 +192,8 @@ impl ValidatorHistoryEntry {
             separated.push_bind(BigDecimal::from(
                 record.validator_history_entry.total_priority_fees,
             ));
-            separated.push_bind(
-                i64::from(record.validator_history_entry.total_leader_slots),
-            );
-            separated
-                .push_bind(i64::from(record.validator_history_entry.blocks_produced));
+            separated.push_bind(i64::from(record.validator_history_entry.total_leader_slots));
+            separated.push_bind(i64::from(record.validator_history_entry.blocks_produced));
             separated.push_bind(BigDecimal::from(
                 record.validator_history_entry.block_data_updated_at_slot,
             ));
@@ -240,9 +235,9 @@ impl ValidatorHistoryEntry {
         vote_pubkey: &str,
     ) -> Result<Vec<Self>, Error> {
         sqlx::query_as::<_, Self>("SELECT * FROM validator_history_entries WHERE vote_pubkey = $1")
-        .bind(vote_pubkey)
-        .fetch_all(db_connection)
-        .await
+            .bind(vote_pubkey)
+            .fetch_all(db_connection)
+            .await
     }
 
     pub async fn fetch_by_validator_and_epoch(
@@ -252,9 +247,9 @@ impl ValidatorHistoryEntry {
     ) -> Result<Option<Self>, Error> {
         let id = format!("{}-{}", epoch, vote_pubkey);
         sqlx::query_as::<_, Self>("SELECT * FROM validator_history_entries WHERE id = $1")
-        .bind(id)
-        .fetch_optional(db_connection)
-        .await
+            .bind(id)
+            .fetch_optional(db_connection)
+            .await
     }
 
     pub async fn fetch_all_records_between_epochs(
@@ -262,7 +257,9 @@ impl ValidatorHistoryEntry {
         start_epoch: u64,
         end_epoch: u64,
     ) -> Result<Vec<Self>, Error> {
-        sqlx::query_as::<_, Self>("SELECT * FROM validator_history_entries WHERE epoch >= $1 AND epoch <= $2")
+        sqlx::query_as::<_, Self>(
+            "SELECT * FROM validator_history_entries WHERE epoch >= $1 AND epoch <= $2",
+        )
         .bind(start_epoch as i32)
         .bind(end_epoch as i32)
         .fetch_all(db_connection)

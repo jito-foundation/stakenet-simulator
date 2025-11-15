@@ -21,6 +21,7 @@ mod fetch_active_stake;
 mod fetch_inactive_stake;
 mod inflation;
 mod priority_fees;
+mod retry_utils;
 mod rpc_utils;
 mod stake_accounts;
 mod validator_history_utils;
@@ -70,6 +71,9 @@ pub enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<(), EpochRewardsTrackerError> {
+    // Load .env file if it exists
+    dotenvy::dotenv().ok();
+
     let level = std::env::var("RUST_LOG").unwrap_or(Level::INFO.to_string());
     tracing_subscriber::fmt()
         .json()

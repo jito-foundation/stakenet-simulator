@@ -1,5 +1,5 @@
 // TODO: For each validator load a stake account that has a long history
-use crate::{EpochRewardsTrackerError, rpc_utils};
+use crate::{EpochRewardsTrackerError, retry_utils::retry_with_exponential_backoff, rpc_utils};
 use futures::stream::{self, StreamExt};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
@@ -20,6 +20,16 @@ pub async fn gather_inflation_rewards(
         .filter_map(|x| Pubkey::from_str(&x).ok())
         .collect();
 
+    // Fetch current epoch from RPC
+    let current_epoch = rpc_client.get_epoch_info().await?.epoch;
+    let end_epoch = current_epoch.saturating_sub(1); // Use current_epoch - 1 as the end
+    let start_epoch = 700u64; // Keep the same start epoch for now
+
+    info!(
+        "Fetching inflation rewards from epoch {} to {} (current epoch: {})",
+        start_epoch, end_epoch, current_epoch
+    );
+
     // We have to limit the number of concurrent requests to prevent RPC rate limits
     let semaphore = Arc::new(Semaphore::new(10));
     let db_connection = Arc::new(db_connection.clone());
@@ -33,7 +43,7 @@ pub async fn gather_inflation_rewards(
             let db_connection = db_connection.clone();
             let rpc_client = rpc_client.clone();
 
-            (700u64..818).map(move |epoch| {
+            (start_epoch..=end_epoch).map(move |epoch| {
                 let semaphore = semaphore.clone();
                 let db_connection = db_connection.clone();
                 let rpc_client = rpc_client.clone();
@@ -67,46 +77,52 @@ async fn process_batch_epoch(
     stake_accounts: &[Pubkey],
     epoch: u64,
 ) -> Result<(), EpochRewardsTrackerError> {
-    let result = async {
-        info!(
-            "Fetching inflation rewards for {} stake accounts in epoch {}",
-            stake_accounts.len(),
-            epoch
-        );
+    let result = retry_with_exponential_backoff(
+        3,     // max_retries
+        1000,  // initial_delay_ms (1 second)
+        10000, // max_delay_ms (10 seconds)
+        || async {
+            info!(
+                "Fetching inflation rewards for {} stake accounts in epoch {}",
+                stake_accounts.len(),
+                epoch
+            );
 
-        let rewards = rpc_utils::get_inflation_rewards(rpc_client, stake_accounts, epoch).await?;
+            let rewards =
+                rpc_utils::get_inflation_rewards(rpc_client, stake_accounts, epoch).await?;
 
-        let records: Vec<InflationReward> = rewards
-            .into_iter()
-            .zip(stake_accounts)
-            .filter_map(
-                |(maybe_inflation_reward, stake_account)| match maybe_inflation_reward {
-                    Some(reward) => Some(InflationReward::from_rpc_inflation_reward(
-                        reward,
-                        stake_account,
-                    )),
-                    None => {
-                        debug!(
-                            "No inflation reward found for stake account {} in epoch {}",
-                            stake_account, epoch
-                        );
-                        None
-                    }
-                },
-            )
-            .collect();
+            let records: Vec<InflationReward> = rewards
+                .into_iter()
+                .zip(stake_accounts)
+                .filter_map(
+                    |(maybe_inflation_reward, stake_account)| match maybe_inflation_reward {
+                        Some(reward) => Some(InflationReward::from_rpc_inflation_reward(
+                            reward,
+                            stake_account,
+                        )),
+                        None => {
+                            debug!(
+                                "No inflation reward found for stake account {} in epoch {}",
+                                stake_account, epoch
+                            );
+                            None
+                        }
+                    },
+                )
+                .collect();
 
-        if !records.is_empty() {
-            InflationReward::bulk_insert(db_connection, records).await?;
-        }
+            if !records.is_empty() {
+                InflationReward::bulk_insert(db_connection, records).await?;
+            }
 
-        Ok::<(), EpochRewardsTrackerError>(())
-    }
+            Ok::<(), EpochRewardsTrackerError>(())
+        },
+    )
     .await;
 
     if let Err(e) = &result {
         error!(
-            "Failed to process stake accounts {:?} for epoch {}: {:?}",
+            "Failed to process stake accounts {:?} for epoch {} after retries: {:?}",
             stake_accounts.iter().take(3).collect::<Vec<_>>(),
             epoch,
             e

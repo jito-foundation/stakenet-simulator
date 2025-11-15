@@ -1093,13 +1093,14 @@ impl RebalancingSimulator {
         for wd in withdraws_and_deposits {
             let active_balance = active_by_epoch.get(&wd.epoch).cloned().unwrap_or(0.0);
 
-            epoch_map.entry(wd.epoch).or_default().push(
-                EpochWithdrawDepositStakeData {
+            epoch_map
+                .entry(wd.epoch)
+                .or_default()
+                .push(EpochWithdrawDepositStakeData {
                     withdraw_stake: wd.withdraw_stake.to_f64().unwrap_or(0.0),
                     deposit_stake: wd.deposit_stake.to_f64().unwrap_or(0.0),
                     active_balance,
-                },
-            );
+                });
         }
 
         epoch_map

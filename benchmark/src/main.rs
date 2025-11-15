@@ -108,7 +108,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let offset = rpc_epoch - est_now;
 
     let epoch_ranges = vec![
-        (600, 700), 
+        (600, 700),
         (550, 600),
         (735, 800),
         (732, 800),

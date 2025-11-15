@@ -108,7 +108,9 @@ impl EpochRewards {
         vote_accounts: &Vec<String>,
         epoch: u64,
     ) -> Result<Vec<Self>, Error> {
-        sqlx::query_as::<_, Self>("SELECT * FROM epoch_rewards WHERE vote_pubkey = ANY($1) AND epoch = $2")
+        sqlx::query_as::<_, Self>(
+            "SELECT * FROM epoch_rewards WHERE vote_pubkey = ANY($1) AND epoch = $2",
+        )
         .bind(vote_accounts)
         .bind(BigDecimal::from(epoch))
         .fetch_all(db_connection)
