@@ -32,3 +32,12 @@ validator-history = { workspace = true }
 jito-steward = { workspace = true }
 type-layout = "0.2"
 rand = "0.9.2"
+serde_json = { workspace = true }
+
+[[bin]]
+name = "steward-simulator-cli"
+path = "src/main.rs"
+
+[[bin]]
+name = "epoch-slots"
+path = "src/bin/epoch_slots.rs"
